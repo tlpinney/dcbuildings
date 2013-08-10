@@ -8,6 +8,7 @@ from shapely import speedups
 from sys import argv
 from glob import glob
 import re
+from pprint import pprint
 
 speedups.enable()
 
@@ -25,14 +26,10 @@ def convert(buildingIn, addressIn, buildingOut, addressOut):
     # Load and index all buildings.
     buildingIdx = index.Index()
     buildings = []
-    voids = []
     with collection(buildingIn, "r") as input:
         for building in input:
             building['shape'] = asShape(building['geometry'])
-            if building['properties']['DESCRIPTIO'] == 'Void':
-                voids.append(building)
-            else:
-                building['voids'] = []
+            if building['properties']['DESCRIPTIO'] != 'Void':
                 building['properties']['addresses'] = []
                 buildings.append(building)
                 buildingIdx.add(len(buildings) - 1, building['shape'].bounds)
@@ -43,12 +40,6 @@ def convert(buildingIn, addressIn, buildingOut, addressOut):
             if buildings[i]['shape'].contains(address):
                 buildings[i]['properties']['addresses'].append(
                     address.original)
-
-    # Map voids to buildings.
-    for void in voids:
-        for i in buildingIdx.intersection(void['shape'].bounds):
-            if buildings[i]['shape'].intersects(void['shape']):
-                buildings[i]['voids'].append(void)
 
     # Generates a new osm id.
     osmIds = dict(node = -1, way = -1, rel = -1)
@@ -108,16 +99,16 @@ def convert(buildingIn, addressIn, buildingOut, addressOut):
 
     # Appends a building to a given OSM xml document.
     def appendBuilding(building, address, osmXml):
-        # Export building, create multipolygon if there are void shapes.
-        way = appendNewWay(building['geometry']['coordinates'][0], osmXml)
-        voidWays = []
-        for void in building['voids']:
-            voidWays.append(appendNewWay(void['geometry']['coordinates'][0], osmXml))
-        if len(voidWays) > 0:
+        # Export building, create multipolygon if there are interior shapes.
+        way = appendNewWay(list(building['shape'].exterior.coords), osmXml)
+        interiors = []
+        for interior in building['shape'].interiors:
+            interiors.append(appendNewWay(list(interior.coords), osmXml))
+        if len(interiors) > 0:
             relation = etree.Element('relation', visible='true', id=str(newOsmId('way')))
             relation.append(etree.Element('member', type='way', role='outer', ref=way.get('id')))
-            for voidWay in voidWays:
-                relation.append(etree.Element('member', type='way', role='inner', ref=voidWay.get('id')))
+            for interior in interiors:
+                relation.append(etree.Element('member', type='way', role='inner', ref=interior.get('id')))
             relation.append(etree.Element('tag', k='type', v='multipolygon'))
             osmXml.append(relation)
             way = relation
