@@ -113,6 +113,8 @@ def convert(buildingIn, addressIn, buildingOut, addressOut):
             osmXml.append(relation)
             way = relation
         way.append(etree.Element('tag', k='building', v='yes'))
+        if 'GIS_ID' in building['properties']:
+            way.append(etree.Element('tag', k='dcgis:gis_id', v=str(building['properties']['GIS_ID'])))
         if address: appendAddress(address, way)
 
     # Export buildings. Only export address with building if thre is exactly
